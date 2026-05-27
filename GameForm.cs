@@ -13,8 +13,8 @@ namespace MemoryCardGame
         private int cols;
 
         private TableLayoutPanel gridLayout;
-        private Timer gameTimer; // 用來處理翻錯牌延遲蓋回的 Timer
-        private object wmpPlayer; // 專屬 MP3 播放器
+        private Timer gameTimer; 
+        private object wmpPlayer; 
         private Label scoreLabel;
 
         private Button firstClicked = null;
@@ -23,11 +23,10 @@ namespace MemoryCardGame
         private int totalPairs = 0;
         private int flipCount = 0;
 
-        // 👑 【新功能：倒數計時與分數變數】
-        private Timer countdownTimer; // 負責倒數計時的全新 Timer
-        private int timeLeft = 60;    // 剩餘時間（秒）
-        private int playerScore = 0;  // 玩家目前的總得分
-        private int comboCount = 0;   // 目前的連續配對成功次數 (Combo)
+        private Timer countdownTimer; 
+        private int timeLeft = 60;    
+        private int playerScore = 0;  
+        private int comboCount = 0;   
 
         private List<Image> allImages = new List<Image>();
 
@@ -38,7 +37,6 @@ namespace MemoryCardGame
             ConfigureLayoutSettings();
             InitializeGameComponents();
 
-            // 🎵 開場 MP3 專屬播放區
             try
             {
                 string tempMp3Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "memory_game_start.mp3");
@@ -96,24 +94,24 @@ namespace MemoryCardGame
 
         private void ConfigureLayoutSettings()
         {
-            if (difficulty == 0) // Easy
+            if (difficulty == 0) 
             {
                 rows = 4; cols = 4;
-                timeLeft = 60; // 簡單模式給 60 秒
+                timeLeft = 60; 
                 this.Size = new Size(600, 700);
                 this.Text = "記憶翻牌 - 簡單 (4x4)";
             }
-            else if (difficulty == 1) // Medium
+            else if (difficulty == 1) 
             {
                 rows = 4; cols = 6;
-                timeLeft = 90; // 中等模式給 90 秒
+                timeLeft = 90; 
                 this.Size = new Size(900, 700);
                 this.Text = "記憶翻牌 - 中等 (4x6)";
             }
             else // Hard
             {
                 rows = 6; cols = 6;
-                timeLeft = 120; // 困難模式給 120 秒
+                timeLeft = 120; 
                 this.Size = new Size(900, 1000);
                 this.Text = "記憶翻牌 - 困難 (6x6)";
             }
@@ -139,7 +137,7 @@ namespace MemoryCardGame
             scoreLabel.Dock = DockStyle.Fill;
             scoreLabel.TextAlign = ContentAlignment.MiddleCenter;
             statusPanel.Controls.Add(scoreLabel);
-            UpdateStatusLabel(); // 初始化狀態列文字
+            UpdateStatusLabel(); 
 
             Button btnBack = new Button();
             btnBack.Text = "返回選單";
@@ -166,16 +164,16 @@ namespace MemoryCardGame
 
             this.Controls.Add(gridLayout);
 
-            // 處理翻錯牌的 Timer
+            
             gameTimer = new Timer();
             gameTimer.Interval = 800;
             gameTimer.Tick += GameTimer_Tick;
 
-            // 👑 【新功能：啟動倒數計時的 Timer】
+            
             countdownTimer = new Timer();
-            countdownTimer.Interval = 1000; // 每 1000 毫秒 (1秒) 觸發一次
+            countdownTimer.Interval = 1000; 
             countdownTimer.Tick += CountdownTimer_Tick;
-            countdownTimer.Start(); // 遊戲開始，啟動倒數！
+            countdownTimer.Start(); 
 
             List<Image> gameImages = PrepareShuffledImages();
 
@@ -227,17 +225,16 @@ namespace MemoryCardGame
             return selected;
         }
 
-        // 👑 【新功能：每秒執行一次的倒數計時事件】
         private void CountdownTimer_Tick(object sender, EventArgs e)
         {
-            timeLeft--; // 時間減 1 秒
+            timeLeft--; 
             UpdateStatusLabel();
 
             if (timeLeft <= 0)
             {
-                countdownTimer.Stop(); // 停止倒數
+                countdownTimer.Stop(); 
                 MessageBox.Show("時間到！挑戰失敗了，再試一次吧！", "遊戲結束", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                this.Close(); // 關閉遊戲視窗，退回選單
+                this.Close(); 
             }
         }
 
@@ -261,13 +258,10 @@ namespace MemoryCardGame
             secondClicked = clickedCard;
             flipCount++;
 
-            // 對答案
             if (firstClicked.Tag == secondClicked.Tag)
             {
-                // 👑 【新功能：配對成功，加分並累積 Combo！】
-                comboCount++; // 連擊數 +1
+                comboCount++; 
 
-                // 基礎分 100 分，根據 Combo 給予加成（例：Combo x2 拿 200 分，Combo x3 拿 300 分）
                 int scoreGained = 100 * comboCount;
                 playerScore += scoreGained;
 
@@ -283,18 +277,17 @@ namespace MemoryCardGame
 
                 if (matchCount == totalPairs)
                 {
-                    countdownTimer.Stop(); // 贏了就要立刻停止計時！
+                    countdownTimer.Stop();
                     MessageBox.Show($"恭喜過關！\n總完成時間：{this.Text}\n總翻牌次數：{flipCount} 次\n最終總得分：{playerScore} 分！", "挑戰成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     this.Close();
                 }
             }
             else
             {
-                // 👑 【新功能：配對失敗，Combo 立刻斷掉歸零！】
                 comboCount = 0;
                 UpdateStatusLabel();
 
-                gameTimer.Start(); // 啟動蓋牌計時器
+                gameTimer.Start(); 
             }
         }
 
@@ -309,7 +302,6 @@ namespace MemoryCardGame
             secondClicked = null;
         }
 
-        // 👑 【新功能：狀態列同步更新時間、分數與 Combo 狀態】
         private void UpdateStatusLabel()
         {
             string comboText = comboCount > 1 ? $"  🔥 Combo x{comboCount}!" : "";
@@ -320,7 +312,6 @@ namespace MemoryCardGame
         {
             base.OnFormClosing(e);
 
-            // 安全退場：關閉視窗時要把兩個計時器都關掉
             if (countdownTimer != null) countdownTimer.Stop();
             if (gameTimer != null) gameTimer.Stop();
 
