@@ -13,8 +13,8 @@ namespace MemoryCardGame
         private int cols;
 
         private TableLayoutPanel gridLayout;
-        private Timer gameTimer;
-        private object wmpPlayer;
+        private Timer gameTimer; // 用來處理翻錯牌延遲蓋回的 Timer
+        private object wmpPlayer; // 專屬 MP3 播放器
         private Label scoreLabel;
 
         private Button firstClicked = null;
@@ -22,30 +22,31 @@ namespace MemoryCardGame
         private int matchCount = 0;
         private int totalPairs = 0;
         private int flipCount = 0;
- 
 
-        // ★關鍵修改 1：移除 Unicode 符號，改用 Image 型態的清單★
+        // 👑 【新功能：倒數計時與分數變數】
+        private Timer countdownTimer; // 負責倒數計時的全新 Timer
+        private int timeLeft = 60;    // 剩餘時間（秒）
+        private int playerScore = 0;  // 玩家目前的總得分
+        private int comboCount = 0;   // 目前的連續配對成功次數 (Combo)
+
         private List<Image> allImages = new List<Image>();
 
         public GameForm(int diff)
         {
             this.difficulty = diff;
-            LoadGameImages(); // 載入資源圖片
+            LoadGameImages();
             ConfigureLayoutSettings();
             InitializeGameComponents();
 
+            // 🎵 開場 MP3 專屬播放區
             try
             {
-                // 1. 在電腦暫存區規劃一個位置放 MP3
-                string tempMp3Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "start.mp3");
-
-                // 2. 把資源檔的 byte[] 寫成暫存檔
+                string tempMp3Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "memory_game_start.mp3");
                 if (!System.IO.File.Exists(tempMp3Path))
                 {
                     System.IO.File.WriteAllBytes(tempMp3Path, Properties.Resources.start);
                 }
 
-                // 3. 呼叫 WMP 元件播放這個暫存的 MP3 檔
                 Type wmpType = Type.GetTypeFromProgID("WMPlayer.OCX.7");
                 if (wmpType != null)
                 {
@@ -56,16 +57,10 @@ namespace MemoryCardGame
             catch { /* 防呆 */ }
         }
 
-        /// <summary>
-        /// ★關鍵修改 2：從資源檔載入圖片★
-        /// 這裡假設你在資源檔加入了 img1~img18 以及 cardBack
-        /// </summary>
         private void LoadGameImages()
         {
             try
             {
-                // 從 Properties.Resources 讀取圖片實體
-                // 注意：這裡的名字必須跟你在 Resources.resx 裡的名字完全一致
                 allImages.Add(Properties.Resources.pic1);
                 allImages.Add(Properties.Resources.pic2);
                 allImages.Add(Properties.Resources.pic3);
@@ -75,15 +70,14 @@ namespace MemoryCardGame
                 allImages.Add(Properties.Resources.pic7);
                 allImages.Add(Properties.Resources.pic8);
 
-                // 如果是困難模式，可能需要更多圖
-                if (difficulty >= 1) // Medium 以上
+                if (difficulty >= 1)
                 {
                     allImages.Add(Properties.Resources.pic9);
                     allImages.Add(Properties.Resources.pic10);
                     allImages.Add(Properties.Resources.pic11);
                     allImages.Add(Properties.Resources.pic12);
                 }
-                if (difficulty >= 2) // Hard
+                if (difficulty >= 2)
                 {
                     allImages.Add(Properties.Resources.pic13);
                     allImages.Add(Properties.Resources.pic14);
@@ -105,18 +99,21 @@ namespace MemoryCardGame
             if (difficulty == 0) // Easy
             {
                 rows = 4; cols = 4;
-                this.Size = new Size(600, 700); // 圖片通常較大，視窗調大一點
+                timeLeft = 60; // 簡單模式給 60 秒
+                this.Size = new Size(600, 700);
                 this.Text = "記憶翻牌 - 簡單 (4x4)";
             }
             else if (difficulty == 1) // Medium
             {
                 rows = 4; cols = 6;
+                timeLeft = 90; // 中等模式給 90 秒
                 this.Size = new Size(900, 700);
                 this.Text = "記憶翻牌 - 中等 (4x6)";
             }
             else // Hard
             {
                 rows = 6; cols = 6;
+                timeLeft = 120; // 困難模式給 120 秒
                 this.Size = new Size(900, 1000);
                 this.Text = "記憶翻牌 - 困難 (6x6)";
             }
@@ -130,7 +127,6 @@ namespace MemoryCardGame
 
         private void InitializeGameComponents()
         {
-            // 上方狀態列 (維持原樣)
             Panel statusPanel = new Panel();
             statusPanel.Dock = DockStyle.Top;
             statusPanel.Height = 60;
@@ -138,12 +134,12 @@ namespace MemoryCardGame
             this.Controls.Add(statusPanel);
 
             scoreLabel = new Label();
-            scoreLabel.Text = $"配對進度: 0 / {totalPairs}  |  翻牌次數: 0";
             scoreLabel.Font = new Font("微軟正黑體", 12, FontStyle.Bold);
             scoreLabel.ForeColor = Color.White;
             scoreLabel.Dock = DockStyle.Fill;
             scoreLabel.TextAlign = ContentAlignment.MiddleCenter;
             statusPanel.Controls.Add(scoreLabel);
+            UpdateStatusLabel(); // 初始化狀態列文字
 
             Button btnBack = new Button();
             btnBack.Text = "返回選單";
@@ -157,7 +153,6 @@ namespace MemoryCardGame
             btnBack.Click += (s, e) => this.Close();
             statusPanel.Controls.Add(btnBack);
 
-            // 動態網格排版 (維持原樣)
             gridLayout = new TableLayoutPanel();
             gridLayout.Dock = DockStyle.Fill;
             gridLayout.Padding = new Padding(15);
@@ -170,11 +165,18 @@ namespace MemoryCardGame
                 gridLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cols));
 
             this.Controls.Add(gridLayout);
+
+            // 處理翻錯牌的 Timer
             gameTimer = new Timer();
-            gameTimer.Interval = 800; // 錯牌顯示時間
+            gameTimer.Interval = 800;
             gameTimer.Tick += GameTimer_Tick;
 
-            // ★關鍵修改 3：移除字型設定，改用圖片洗牌★
+            // 👑 【新功能：啟動倒數計時的 Timer】
+            countdownTimer = new Timer();
+            countdownTimer.Interval = 1000; // 每 1000 毫秒 (1秒) 觸發一次
+            countdownTimer.Tick += CountdownTimer_Tick;
+            countdownTimer.Start(); // 遊戲開始，啟動倒數！
+
             List<Image> gameImages = PrepareShuffledImages();
 
             int imgIndex = 0;
@@ -185,34 +187,29 @@ namespace MemoryCardGame
                     Button card = new Button();
                     card.Dock = DockStyle.Fill;
                     card.Margin = new Padding(6);
-                    card.BackColor = Color.White; // 圖片底色通常設為白色
+                    card.BackColor = Color.White;
                     card.FlatStyle = FlatStyle.Flat;
-                    card.FlatAppearance.BorderSize = 1; // 給個細邊框
+                    card.FlatAppearance.BorderSize = 1;
                     card.FlatAppearance.BorderColor = Color.LightGray;
                     card.Cursor = Cursors.Hand;
 
-                    // ★關鍵修改 4：設定圖片屬性★
-                    card.Tag = gameImages[imgIndex++]; // 真正的圖片藏在 Tag (object型態)
-                    card.Image = Properties.Resources.back; // 預設顯示背面圖片
-                    card.ImageAlign = ContentAlignment.MiddleCenter; // 圖片居中
+                    card.Tag = gameImages[imgIndex++];
+                    card.Image = Properties.Resources.back;
+                    card.ImageAlign = ContentAlignment.MiddleCenter;
 
                     card.Click += Card_Click;
                     gridLayout.Controls.Add(card, c, r);
                 }
             }
-            statusPanel.BringToFront(); // 強制把狀態列拉到最前層
-            gridLayout.Padding = new Padding(15, 75, 15, 15); // 精準控制：上內距加大到 75，直接把牌往下推！
+            statusPanel.BringToFront();
+            gridLayout.Padding = new Padding(15, 75, 15, 15);
         }
 
-        /// <summary>
-        /// ★關鍵修改 5：將 Image 型態的圖片進行洗牌★
-        /// </summary>
         private List<Image> PrepareShuffledImages()
         {
             List<Image> selected = new List<Image>();
             for (int i = 0; i < totalPairs; i++)
             {
-                // 每個圖片加兩次
                 selected.Add(allImages[i]);
                 selected.Add(allImages[i]);
             }
@@ -230,17 +227,29 @@ namespace MemoryCardGame
             return selected;
         }
 
+        // 👑 【新功能：每秒執行一次的倒數計時事件】
+        private void CountdownTimer_Tick(object sender, EventArgs e)
+        {
+            timeLeft--; // 時間減 1 秒
+            UpdateStatusLabel();
+
+            if (timeLeft <= 0)
+            {
+                countdownTimer.Stop(); // 停止倒數
+                MessageBox.Show("時間到！挑戰失敗了，再試一次吧！", "遊戲結束", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                this.Close(); // 關閉遊戲視窗，退回選單
+            }
+        }
+
         private void Card_Click(object sender, EventArgs e)
         {
-            if (gameTimer.Enabled) return;
+            if (gameTimer.Enabled || timeLeft <= 0) return;
 
             Button clickedCard = sender as Button;
             if (clickedCard == null) return;
 
-            // 🔥 修改這裡：如果這張牌就是已經被點的第一張牌，或是已經配對成功（邊框變綠色）的牌，就不能再點
             if (clickedCard == firstClicked || clickedCard.FlatAppearance.BorderSize == 3) return;
 
-            // 翻開牌：將 Image 屬性設為 Tag 裡藏的正面圖片
             clickedCard.Image = (Image)clickedCard.Tag;
 
             if (firstClicked == null)
@@ -251,13 +260,18 @@ namespace MemoryCardGame
 
             secondClicked = clickedCard;
             flipCount++;
-            UpdateStatusLabel();
 
-            // 對答案：直接比對兩個 Image 物件的參照是否相同
+            // 對答案
             if (firstClicked.Tag == secondClicked.Tag)
             {
-                // 答對了 (维持翻開，不可再點擊)
-                firstClicked.FlatAppearance.BorderColor = Color.FromArgb(46, 204, 113); // 成功邊框變綠色
+                // 👑 【新功能：配對成功，加分並累積 Combo！】
+                comboCount++; // 連擊數 +1
+
+                // 基礎分 100 分，根據 Combo 給予加成（例：Combo x2 拿 200 分，Combo x3 拿 300 分）
+                int scoreGained = 100 * comboCount;
+                playerScore += scoreGained;
+
+                firstClicked.FlatAppearance.BorderColor = Color.FromArgb(46, 204, 113);
                 firstClicked.FlatAppearance.BorderSize = 3;
                 secondClicked.FlatAppearance.BorderColor = Color.FromArgb(46, 204, 113);
                 secondClicked.FlatAppearance.BorderSize = 3;
@@ -269,14 +283,18 @@ namespace MemoryCardGame
 
                 if (matchCount == totalPairs)
                 {
-                    MessageBox.Show($"恭喜過關！\n總共翻牌次數：{flipCount} 次！", "挑戰成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    countdownTimer.Stop(); // 贏了就要立刻停止計時！
+                    MessageBox.Show($"恭喜過關！\n總完成時間：{this.Text}\n總翻牌次數：{flipCount} 次\n最終總得分：{playerScore} 分！", "挑戰成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     this.Close();
                 }
             }
             else
             {
-                // 答錯，啟動計時器
-                gameTimer.Start();
+                // 👑 【新功能：配對失敗，Combo 立刻斷掉歸零！】
+                comboCount = 0;
+                UpdateStatusLabel();
+
+                gameTimer.Start(); // 啟動蓋牌計時器
             }
         }
 
@@ -284,8 +302,6 @@ namespace MemoryCardGame
         {
             gameTimer.Stop();
 
-            // ★關鍵修改 8：錯牌蓋回去★
-            // 將 Image 屬性恢復為背面圖片
             firstClicked.Image = Properties.Resources.back;
             secondClicked.Image = Properties.Resources.back;
 
@@ -293,13 +309,21 @@ namespace MemoryCardGame
             secondClicked = null;
         }
 
+        // 👑 【新功能：狀態列同步更新時間、分數與 Combo 狀態】
         private void UpdateStatusLabel()
         {
-            scoreLabel.Text = $"配對進度: {matchCount} / {totalPairs}  |  翻牌次數: {flipCount}";
+            string comboText = comboCount > 1 ? $"  🔥 Combo x{comboCount}!" : "";
+            scoreLabel.Text = $"⏳ 剩餘時間: {timeLeft} 秒  |  🎯 分數: {playerScore} 分{comboText}\n[ 進度: {matchCount} / {totalPairs}  |  翻牌次數: {flipCount} ]";
         }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
+
+            // 安全退場：關閉視窗時要把兩個計時器都關掉
+            if (countdownTimer != null) countdownTimer.Stop();
+            if (gameTimer != null) gameTimer.Stop();
+
             if (wmpPlayer != null)
             {
                 try
